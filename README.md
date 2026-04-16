@@ -1,5 +1,6 @@
 # mark2markers
 Davinci Resolve Plugin to import XbotGo .mark files into Davinci Resolve as timing markers
+The script now supports Chameleon clicks file as well as the Falcon .mark file. The script will autodetct which one you select bases on the start time listed in the file.
 
 * Place the .lua file in the following location:
   
