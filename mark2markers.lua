@@ -21,7 +21,7 @@ end
 
 -- File picker
 fusion = resolve:Fusion()
-filepath = fusion:RequestFile("", "", {["File Types"] = "Mark Files (*.mark)|*.mark"})
+filepath = fusion:RequestFile("", "", {["File Types"] = "Mark Files (*.mark)|*.mark;JSON Files (*.json)|*.json|All Files (*.*)|*.*"})
 
 if not filepath or filepath == "" then
     print("No file selected.")
@@ -38,8 +38,36 @@ end
 content = file:read("*all")
 file:close()
 
--- Basic JSON parsing using Lua pattern matching
--- Works for your simple format
+-- Auto-detect device format:
+-- Chameleon uses Unix epoch timestamps (large integers, e.g. > 1,000,000,000)
+-- Falcon uses relative seconds (small floats/ints)
+firstTime = tonumber(string.match(content, '"time"%s*:%s*([%d%.]+)'))
+
+isChameleon = firstTime and firstTime > 1000000000
+
+if isChameleon then
+    print("Detected format: Chameleon (epoch timestamps)")
+else
+    print("Detected format: Falcon (relative seconds)")
+end
+
+-- For Chameleon: find the epoch time of the "start" event to use as origin
+startEpoch = 0
+if isChameleon then
+    startEpoch = tonumber(string.match(content, '"type"%s*:%s*"start"%s*,%s*"time"%s*:%s*([%d%.]+)'))
+    if not startEpoch then
+        -- fallback: try reverse field order
+        startEpoch = tonumber(string.match(content, '"time"%s*:%s*([%d%.]+)%s*,%s*[^}]-"type"%s*:%s*"start"'))
+    end
+    if not startEpoch then
+        print("Warning: Could not find start event for Chameleon origin. Defaulting to 0.")
+        startEpoch = 0
+    else
+        print("Chameleon start epoch: " .. startEpoch)
+    end
+end
+
+-- Parse and add markers
 markersAdded = 0
 
 for typeVal, timeVal in string.gmatch(content, '"type"%s*:%s*"([^"]+)".-"time"%s*:%s*([%d%.]+)') do
@@ -47,6 +75,11 @@ for typeVal, timeVal in string.gmatch(content, '"type"%s*:%s*"([^"]+)".-"time"%s
     if typeVal ~= "start" then
 
         eventTime = tonumber(timeVal)
+
+        -- Normalize Chameleon epoch to relative seconds
+        if isChameleon then
+            eventTime = eventTime - startEpoch
+        end
 
         markerStartSeconds = math.max(0, eventTime - START_OFFSET_SECONDS)
 
