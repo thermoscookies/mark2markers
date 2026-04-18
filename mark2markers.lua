@@ -51,30 +51,44 @@ else
     print("Detected format: Falcon (relative seconds)")
 end
 
--- For Chameleon: find the epoch time of the "start" event to use as origin
+-- Parse each JSON object {…} individually to avoid greedy cross-object matching
+function parseEvents(str)
+    local events = {}
+    for obj in string.gmatch(str, "{([^}]+)}") do
+        local typeVal = string.match(obj, '"type"%s*:%s*"([^"]+)"')
+        local timeVal = tonumber(string.match(obj, '"time"%s*:%s*([%d%.]+)'))
+        if typeVal and timeVal then
+            table.insert(events, {type = typeVal, time = timeVal})
+        end
+    end
+    return events
+end
+
+events = parseEvents(content)
+
+-- For Chameleon: find the start epoch from the parsed events
 startEpoch = 0
 if isChameleon then
-    startEpoch = tonumber(string.match(content, '"type"%s*:%s*"start"%s*,%s*"time"%s*:%s*([%d%.]+)'))
-    if not startEpoch then
-        -- fallback: try reverse field order
-        startEpoch = tonumber(string.match(content, '"time"%s*:%s*([%d%.]+)%s*,%s*[^}]-"type"%s*:%s*"start"'))
+    for _, e in ipairs(events) do
+        if e.type == "start" then
+            startEpoch = e.time
+            break
+        end
     end
-    if not startEpoch then
+    if startEpoch == 0 then
         print("Warning: Could not find start event for Chameleon origin. Defaulting to 0.")
-        startEpoch = 0
     else
         print("Chameleon start epoch: " .. startEpoch)
     end
 end
 
--- Parse and add markers
+-- Add markers
 markersAdded = 0
 
-for typeVal, timeVal in string.gmatch(content, '"type"%s*:%s*"([^"]+)".-"time"%s*:%s*([%d%.]+)') do
+for _, e in ipairs(events) do
+    if e.type ~= "start" then
 
-    if typeVal ~= "start" then
-
-        eventTime = tonumber(timeVal)
+        eventTime = e.time
 
         -- Normalize Chameleon epoch to relative seconds
         if isChameleon then
@@ -89,7 +103,7 @@ for typeVal, timeVal in string.gmatch(content, '"type"%s*:%s*"([^"]+)".-"time"%s
         timeline:AddMarker(
             startFrame,
             "Blue",
-            typeVal,
+            e.type,
             "",
             durationFrames
         )
